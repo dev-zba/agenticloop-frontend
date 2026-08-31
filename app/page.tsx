@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Loader2, Play, ShieldAlert } from "lucide-react";
+import { sanitizeErrorMessage } from "./sanitize";
 
 type RunResponse = {
   id: string;
@@ -46,7 +47,8 @@ export default function HomePage() {
       const data = (await res.json()) as RunResponse;
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      setError(sanitizeErrorMessage(raw));
     } finally {
       setLoading(false);
     }
@@ -99,7 +101,7 @@ export default function HomePage() {
       {error && (
         <div className="mt-6 flex gap-3 rounded-xl border border-[var(--fail)]/40 bg-[var(--fail)]/10 p-4 text-sm">
           <ShieldAlert className="h-5 w-5 shrink-0 text-[var(--fail)]" />
-          <pre className="whitespace-pre-wrap font-mono text-[var(--fail)]">{error}</pre>
+          <pre className="whitespace-pre-wrap font-mono text-[var(--fail)]">{sanitizeErrorMessage(error)}</pre>
         </div>
       )}
 
@@ -133,7 +135,7 @@ function ResultsView({ result }: { result: RunResponse }) {
         {result.input_tokens != null ? ` · ${result.input_tokens} in / ${result.output_tokens ?? 0} out` : ""}
       </p>
       {result.error && (
-        <p className="text-sm text-[var(--fail)]">Apply warning: {result.error}</p>
+        <p className="text-sm text-[var(--fail)]">Apply warning: {sanitizeErrorMessage(result.error)}</p>
       )}
       <Panel title="Diff">
         <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5">
