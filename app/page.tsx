@@ -221,7 +221,9 @@ function EventRow({ event }: { event: PipelineEvent }) {
 }
 
 function SpecificationView({ result }: { result: RunResponse }) {
-  const specs = (result.specification ?? []) as Requirement[];
+  const accepted = (result.specification ?? []) as Requirement[];
+  const rejected = (result.rejected_requirements ?? []) as Requirement[];
+  const revisions = result.revision_log ?? [];
   const cost = useMemo(
     () =>
       (result.token_cost ?? 0) < 0.0001
@@ -240,11 +242,16 @@ function SpecificationView({ result }: { result: RunResponse }) {
     <section className="mt-10 space-y-6">
       <div className="flex items-center gap-2">
         <FileText className="h-5 w-5 text-[var(--gold)]" />
-        <h2 className="text-2xl font-semibold">Specification</h2>
+        <h2 className="text-2xl font-semibold">Specification decision</h2>
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Requirements" value={String(specs.length)} />
-        <Metric label="Spec iters" value={String(result.spec_iteration ?? "—")} />
+      <p className="max-w-3xl text-sm text-[var(--muted)]">
+        What Builder was allowed to implement, what was rejected, and what Adversary sent back for
+        another Spec Detective pass.
+      </p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Metric label="Accepted" value={String(accepted.length)} tone="pass" />
+        <Metric label="Rejected" value={String(rejected.length)} tone={rejected.length ? "fail" : "muted"} />
+        <Metric label="Revisions" value={String(revisions.length)} />
         <Metric label="Runtime" value={`${(result.runtime_seconds ?? 0).toFixed(2)}s`} />
         <Metric label="Token cost" value={cost} />
       </div>
@@ -253,46 +260,71 @@ function SpecificationView({ result }: { result: RunResponse }) {
           Spec conflict after {result.spec_iteration} iteration(s) — Builder did not run.
         </p>
       )}
-      <div className="space-y-4">
-        {specs.map((req) => (
-          <div key={req.id} className="rounded-xl border border-[var(--line)] bg-[var(--bg-card)] p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="mono text-xs text-[var(--gold)]">{req.id}</p>
-                <p className="mt-1 text-sm leading-relaxed">{req.text}</p>
+
+      {revisions.length > 0 && (
+        <Panel title="↻ Sent back to Spec Detective">
+          <div className="space-y-4">
+            {revisions.map((rev, i) => (
+              <div key={i} className="rounded-lg border border-[var(--gold)]/30 bg-[var(--gold)]/5 p-3">
+                <p className="mono text-xs text-[var(--gold)]">
+                  Iteration {rev.from_iteration} → {rev.to_iteration} · {rev.action || "loop_back"}
+                </p>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Adversary found conflict(s); draft was revised before Builder.
+                </p>
+                <ul className="mt-2 space-y-2">
+                  {(rev.conflicts || []).map((c, j) => (
+                    <li key={j} className="text-sm">
+                      <span className="mono text-xs text-[var(--fail)]">
+                        {String(c.requirement_id || "SPEC")}
+                      </span>{" "}
+                      <span className="text-[var(--text)]">{String(c.summary || c.detail || "")}</span>
+                      {Array.isArray(c.evidence) && c.evidence.length > 0 && (
+                        <p className="mono mt-0.5 text-[10px] text-[var(--muted)]">
+                          {(c.evidence as string[]).join(" · ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {(rev.draft_snapshot?.length ?? 0) > 0 && (
+                  <details className="mt-2">
+                    <summary className="mono cursor-pointer text-[10px] uppercase tracking-widest text-[var(--muted)]">
+                      Draft at conflict ({rev.draft_snapshot!.length})
+                    </summary>
+                    <ul className="mt-2 space-y-1 pl-2">
+                      {rev.draft_snapshot!.map((r) => (
+                        <li key={r.id} className="text-xs text-[var(--muted)]">
+                          <span className="text-[var(--gold)]">{r.id}</span> [{r.status}] {r.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-2">
-                <StatusBadge status={req.status} />
-                <ConfidenceBadge level={req.confidence} />
-              </div>
-            </div>
-            <div className="mt-3">
-              <p className="mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
-                Independent evidence
-              </p>
-              <ul className="mt-1 space-y-1">
-                {req.evidence.map((ev, i) => (
-                  <li key={i} className="font-mono text-xs text-[var(--pass)]">
-                    {ev}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
-      </div>
-      {(result.conflicts?.length ?? 0) > 0 && (
-        <Panel title="Unresolved conflicts">
-          <ul className="space-y-2 text-sm">
-            {result.conflicts!.map((c, i) => (
-              <li key={i} className="text-[var(--fail)]">
-                <span className="mono text-xs">{String(c.requirement_id || "")}</span>{" "}
-                {String(c.summary || c.detail || "")}
-              </li>
             ))}
-          </ul>
+          </div>
         </Panel>
       )}
+
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-[var(--pass)]">Accepted → Builder</h3>
+        {accepted.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">Nothing accepted for implementation.</p>
+        ) : (
+          accepted.map((req) => <RequirementCard key={req.id} req={req} />)
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-[var(--fail)]">Rejected — not built</h3>
+        {rejected.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">No requirements rejected on the final pass.</p>
+        ) : (
+          rejected.map((req) => <RequirementCard key={req.id} req={req} showRejection />)
+        )}
+      </div>
+
       {hasBuild && (
         <div className="space-y-4">
           <h3 className="text-xl font-semibold">Builder output</h3>
@@ -310,7 +342,7 @@ function SpecificationView({ result }: { result: RunResponse }) {
             <Metric label="Build iters" value={String(result.build_iteration ?? "—")} />
             <Metric label="Status" value={result.status || "—"} />
           </div>
-          <Panel title="Diff">
+          <Panel title="Diff (sandbox only — original repo untouched)">
             <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5">
               {result.diff || "(empty diff)"}
             </pre>
@@ -337,6 +369,42 @@ function SpecificationView({ result }: { result: RunResponse }) {
         </Panel>
       )}
     </section>
+  );
+}
+
+function RequirementCard({
+  req,
+  showRejection = false,
+}: {
+  req: Requirement;
+  showRejection?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-card)] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="mono text-xs text-[var(--gold)]">{req.id}</p>
+          <p className="mt-1 text-sm leading-relaxed">{req.text}</p>
+          {showRejection && req.rejection_reason && (
+            <p className="mt-2 text-xs text-[var(--fail)]">{req.rejection_reason}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <StatusBadge status={req.status} />
+          <ConfidenceBadge level={req.confidence} />
+        </div>
+      </div>
+      <div className="mt-3">
+        <p className="mono text-[10px] uppercase tracking-widest text-[var(--muted)]">Evidence</p>
+        <ul className="mt-1 space-y-1">
+          {(req.evidence || []).map((ev, i) => (
+            <li key={i} className="font-mono text-xs text-[var(--pass)]">
+              {ev}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 

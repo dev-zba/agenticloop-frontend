@@ -4,6 +4,15 @@ export type Requirement = {
   evidence: string[];
   confidence: "high" | "medium" | "low";
   status: string;
+  rejection_reason?: string;
+};
+
+export type RevisionEntry = {
+  from_iteration?: number;
+  to_iteration?: number;
+  action?: string;
+  conflicts?: Record<string, unknown>[];
+  draft_snapshot?: Requirement[];
 };
 
 export type PipelineEvent = {
@@ -28,6 +37,8 @@ export type RunResponse = {
   error?: string | null;
   status?: string;
   specification?: Requirement[];
+  rejected_requirements?: Requirement[];
+  revision_log?: RevisionEntry[];
   explorer_findings?: Record<string, unknown>;
   evidence_report?: Record<string, unknown>;
   adversary_findings?: Record<string, unknown>[];
