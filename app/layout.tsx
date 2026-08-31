@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Spec Detective — Baseline",
-  description: "Single-LLM baseline for reconstructing implicit repo specs",
+  title: "Spec Detective",
+  description: "Agentic specification reconstruction with Explorer and Spec Detective",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
