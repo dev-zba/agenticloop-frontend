@@ -232,10 +232,15 @@ function SpecificationView({ result }: { result: RunResponse }) {
                 <p className="mono text-xs text-[var(--gold)]">{req.id}</p>
                 <p className="mt-1 text-sm leading-relaxed">{req.text}</p>
               </div>
-              <ConfidenceBadge level={req.confidence} />
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <StatusBadge status={req.status} />
+                <ConfidenceBadge level={req.confidence} />
+              </div>
             </div>
             <div className="mt-3">
-              <p className="mono text-[10px] uppercase tracking-widest text-[var(--muted)]">Evidence</p>
+              <p className="mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+                Independent evidence
+              </p>
               <ul className="mt-1 space-y-1">
                 {req.evidence.map((ev, i) => (
                   <li key={i} className="font-mono text-xs text-[var(--pass)]">
@@ -260,6 +265,25 @@ function SpecificationView({ result }: { result: RunResponse }) {
         </Panel>
       )}
     </section>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const normalized = (status || "proposed").toLowerCase();
+  const map: Record<string, { label: string; cls: string }> = {
+    supported: { label: "✓ supported", cls: "border-[var(--pass)]/40 text-[var(--pass)]" },
+    contradicted: { label: "✗ contradicted", cls: "border-[var(--fail)]/40 text-[var(--fail)]" },
+    insufficient_evidence: {
+      label: "⚠ insufficient evidence",
+      cls: "border-[var(--gold)]/40 text-[var(--gold)]",
+    },
+    proposed: { label: "proposed", cls: "border-[var(--line)] text-[var(--muted)]" },
+  };
+  const item = map[normalized] || map.proposed;
+  return (
+    <span className={`mono rounded border px-2 py-0.5 text-[10px] uppercase tracking-widest ${item.cls}`}>
+      {item.label}
+    </span>
   );
 }
 

@@ -29,6 +29,7 @@ export type RunResponse = {
   status?: string;
   specification?: Requirement[];
   explorer_findings?: Record<string, unknown>;
+  evidence_report?: Record<string, unknown>;
 };
 
 export type RunStarted = {
