@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Play, ShieldAlert, Search, FileText } from "lucide-react";
 import { sanitizeErrorMessage } from "./sanitize";
 import { usePipelineRun } from "./usePipelineRun";
+import { FinalEvaluation } from "./FinalEvaluation";
 import type { PipelineEvent, Requirement, RunResponse } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -17,7 +18,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [baselineResult, setBaselineResult] = useState<RunResponse | null>(null);
-  const [view, setView] = useState<"setup" | "investigation" | "specification">("setup");
+  const [view, setView] = useState<"setup" | "investigation" | "specification" | "evaluation">("setup");
+  const [checkpointNote, setCheckpointNote] = useState("");
+  const [applyOnSuccess, setApplyOnSuccess] = useState(true);
 
   const pipeline = usePipelineRun();
 
@@ -28,7 +31,7 @@ export default function HomePage() {
 
     if (mode === "pipeline") {
       setView("investigation");
-      await pipeline.startPipeline(repoPath, request);
+      await pipeline.startPipeline(repoPath, request, applyOnSuccess);
       if (!pipeline.error) setView("specification");
       return;
     }
@@ -38,7 +41,11 @@ export default function HomePage() {
       const res = await fetch(`${API}/runs?mode=baseline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo_path: repoPath, request }),
+        body: JSON.stringify({
+          repo_path: repoPath,
+          request,
+          apply_on_success: applyOnSuccess,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       setBaselineResult((await res.json()) as RunResponse);
@@ -55,15 +62,15 @@ export default function HomePage() {
     <main className="mx-auto min-h-screen max-w-6xl px-6 py-10">
       <header className="mb-8 border-b border-[var(--line)] pb-6">
         <p className="mono text-xs tracking-[0.25em] text-[var(--gold)] uppercase">
-          Spec Detective · Iteration 4
+          Spec Detective · Final
         </p>
         <h1 className="mt-2 text-4xl font-semibold tracking-tight">Run Setup</h1>
         <p className="mt-2 max-w-3xl text-[var(--muted)]">
-          Baseline: single LLM + sandbox. Pipeline: Explorer → Spec Detective → Evidence → Adversary
-          (spec loop) → Builder.
+          Full pipeline: Explorer → Spec Detective → Evidence → Adversary → Builder → Verifier, with
+          human checkpoint when blocked.
         </p>
-        <nav className="mt-4 flex gap-2">
-          {(["setup", "investigation", "specification"] as const).map((tab) => (
+        <nav className="mt-4 flex flex-wrap gap-2">
+          {(["setup", "investigation", "specification", "evaluation"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -79,6 +86,60 @@ export default function HomePage() {
           ))}
         </nav>
       </header>
+
+      {pipeline.checkpointOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-[var(--gold)]/40 bg-[var(--bg-card)] p-6 shadow-xl">
+            <h3 className="text-xl font-semibold text-[var(--gold)]">Human checkpoint (BLOCKED)</h3>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              {(pipeline.result?.checkpoint as { message?: string } | undefined)?.message ||
+                "The spec loop could not converge. Choose how to proceed."}
+            </p>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              Note is optional. Wait until the run status is BLOCKED (modal stays up), then click one
+              action once.
+            </p>
+            <textarea
+              value={checkpointNote}
+              onChange={(e) => setCheckpointNote(e.target.value)}
+              rows={3}
+              placeholder="Optional — e.g. “implement only farewell, ignore JWT”"
+              className="mt-4 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 font-mono text-sm"
+            />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={pipeline.loading || pipeline.result?.status !== "blocked"}
+                className="rounded-lg bg-[var(--gold)] px-3 py-2 text-sm font-semibold text-[#1a1408] disabled:opacity-50"
+                onClick={() => pipeline.respondCheckpoint("clarify", checkpointNote)}
+              >
+                Clarify &amp; retry
+              </button>
+              <button
+                type="button"
+                disabled={pipeline.loading || pipeline.result?.status !== "blocked"}
+                className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
+                onClick={() => pipeline.respondCheckpoint("accept_assumption", checkpointNote)}
+              >
+                Accept assumption
+              </button>
+              <button
+                type="button"
+                disabled={pipeline.loading || pipeline.result?.status !== "blocked"}
+                className="rounded-lg border border-[var(--fail)]/40 px-3 py-2 text-sm text-[var(--fail)] disabled:opacity-50"
+                onClick={() => pipeline.respondCheckpoint("stop", checkpointNote)}
+              >
+                Stop
+              </button>
+            </div>
+            {pipeline.result?.status && pipeline.result.status !== "blocked" && (
+              <p className="mt-3 text-xs text-[var(--gold)]">
+                Waiting for status=blocked (now: {pipeline.result.status})…
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {(view === "setup" || busy) && (
         <form onSubmit={onRun} className="space-y-5 rounded-2xl border border-[var(--line)] bg-[var(--bg-card)] p-6">
@@ -109,6 +170,21 @@ export default function HomePage() {
               rows={4}
               className="mt-2 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 font-mono text-sm outline-none focus:border-[var(--gold)]"
             />
+          </label>
+          <label className="flex items-start gap-3 rounded-lg border border-[var(--line)] px-3 py-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={applyOnSuccess}
+              onChange={(e) => setApplyOnSuccess(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-[var(--ink)]">Apply to original repo on success</span>
+              <span className="mt-1 block text-[var(--muted)]">
+                Builder still works in a sandbox first. When Verifier passes, copy the diff onto the
+                real repo path (your approval for this run).
+              </span>
+            </span>
           </label>
           <button
             type="submit"
@@ -141,6 +217,8 @@ export default function HomePage() {
       {view === "specification" && pipeline.result && (
         <SpecificationView result={pipeline.result} />
       )}
+
+      {view === "evaluation" && <FinalEvaluation />}
 
       {baselineResult && mode === "baseline" && <BaselineResults result={baselineResult} />}
     </main>
@@ -342,7 +420,22 @@ function SpecificationView({ result }: { result: RunResponse }) {
             <Metric label="Build iters" value={String(result.build_iteration ?? "—")} />
             <Metric label="Status" value={result.status || "—"} />
           </div>
-          <Panel title="Diff (sandbox only — original repo untouched)">
+          <Panel
+            title={
+              result.applied_to_repo
+                ? "Diff (applied to original repo)"
+                : "Diff (sandbox — not applied to original repo)"
+            }
+          >
+            {result.apply_message && (
+              <p
+                className={`mb-3 text-sm ${
+                  result.applied_to_repo ? "text-[var(--pass)]" : "text-[var(--fail)]"
+                }`}
+              >
+                {result.apply_message}
+              </p>
+            )}
             <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5">
               {result.diff || "(empty diff)"}
             </pre>

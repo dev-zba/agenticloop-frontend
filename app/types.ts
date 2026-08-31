@@ -43,8 +43,13 @@ export type RunResponse = {
   evidence_report?: Record<string, unknown>;
   adversary_findings?: Record<string, unknown>[];
   conflicts?: Record<string, unknown>[];
+  verification?: Record<string, unknown> | null;
+  checkpoint?: Record<string, unknown> | null;
+  trajectory_dir?: string | null;
   spec_iteration?: number;
   build_iteration?: number;
+  applied_to_repo?: boolean;
+  apply_message?: string | null;
 };
 
 export type RunStarted = {
