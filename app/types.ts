@@ -30,6 +30,10 @@ export type RunResponse = {
   specification?: Requirement[];
   explorer_findings?: Record<string, unknown>;
   evidence_report?: Record<string, unknown>;
+  adversary_findings?: Record<string, unknown>[];
+  conflicts?: Record<string, unknown>[];
+  spec_iteration?: number;
+  build_iteration?: number;
 };
 
 export type RunStarted = {

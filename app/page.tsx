@@ -55,11 +55,12 @@ export default function HomePage() {
     <main className="mx-auto min-h-screen max-w-6xl px-6 py-10">
       <header className="mb-8 border-b border-[var(--line)] pb-6">
         <p className="mono text-xs tracking-[0.25em] text-[var(--gold)] uppercase">
-          Spec Detective · Iteration 1
+          Spec Detective · Iteration 4
         </p>
         <h1 className="mt-2 text-4xl font-semibold tracking-tight">Run Setup</h1>
         <p className="mt-2 max-w-3xl text-[var(--muted)]">
-          Baseline: single LLM + sandbox. Pipeline: Explorer → Spec Detective with live investigation stream.
+          Baseline: single LLM + sandbox. Pipeline: Explorer → Spec Detective → Evidence → Adversary
+          (spec loop) → Builder.
         </p>
         <nav className="mt-4 flex gap-2">
           {(["setup", "investigation", "specification"] as const).map((tab) => (
@@ -182,22 +183,39 @@ function EventRow({ event }: { event: PipelineEvent }) {
   const d = event.data ?? {};
   const type = event.type;
   let detail = "";
+  let highlight = false;
   if (type === "tool_call") {
     detail = `${String(d.tool)}(${JSON.stringify(d.args ?? {})})`;
   } else if (type === "tool_result") {
     detail = String(d.summary ?? "");
   } else if (type === "spec_updated") {
-    detail = `${String(d.count ?? 0)} requirements drafted`;
+    const iter = d.spec_iteration ? ` · iter ${d.spec_iteration}` : "";
+    const src = d.source ? ` · ${String(d.source)}` : "";
+    detail = `${String(d.count ?? 0)} requirements${iter}${src}${d.revising ? " · revision" : ""}`;
   } else if (type === "agent_started") {
-    detail = String(d.agent ?? "");
+    detail = String(d.label || d.agent || "");
+    if (d.revising || (typeof d.spec_iteration === "number" && Number(d.spec_iteration) > 1)) {
+      highlight = true;
+    }
+  } else if (type === "conflict_found") {
+    highlight = true;
+    if (d.action === "loop_back") {
+      detail = String(d.label || `loop → iteration ${d.next_iteration}`);
+    } else {
+      detail = `${String(d.requirement_id || "")}: ${String(d.summary || d.detail || "")}`;
+    }
   } else {
     detail = JSON.stringify(d);
   }
 
   return (
-    <div className="border-b border-[var(--line)] px-4 py-2 font-mono text-xs last:border-0">
+    <div
+      className={`border-b border-[var(--line)] px-4 py-2 font-mono text-xs last:border-0 ${
+        highlight ? "bg-[var(--gold)]/10" : ""
+      }`}
+    >
       <span className="text-[var(--gold)]">{type}</span>
-      <span className="ml-2 text-[var(--muted)]">{detail}</span>
+      <span className={`ml-2 ${highlight ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>{detail}</span>
     </div>
   );
 }
@@ -211,6 +229,12 @@ function SpecificationView({ result }: { result: RunResponse }) {
         : `$${(result.token_cost ?? 0).toFixed(4)}`,
     [result.token_cost],
   );
+  const hasBuild =
+    Boolean(result.diff) ||
+    (result.tests_passed ?? 0) > 0 ||
+    (result.tests_failed ?? 0) > 0 ||
+    result.status === "implementation_failed" ||
+    result.status === "success";
 
   return (
     <section className="mt-10 space-y-6">
@@ -220,10 +244,15 @@ function SpecificationView({ result }: { result: RunResponse }) {
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="Requirements" value={String(specs.length)} />
+        <Metric label="Spec iters" value={String(result.spec_iteration ?? "—")} />
         <Metric label="Runtime" value={`${(result.runtime_seconds ?? 0).toFixed(2)}s`} />
         <Metric label="Token cost" value={cost} />
-        <Metric label="Model" value={result.model || "—"} />
       </div>
+      {result.status === "spec_conflict" && (
+        <p className="rounded-xl border border-[var(--fail)]/40 bg-[var(--fail)]/10 p-3 text-sm text-[var(--fail)]">
+          Spec conflict after {result.spec_iteration} iteration(s) — Builder did not run.
+        </p>
+      )}
       <div className="space-y-4">
         {specs.map((req) => (
           <div key={req.id} className="rounded-xl border border-[var(--line)] bg-[var(--bg-card)] p-4">
@@ -252,6 +281,49 @@ function SpecificationView({ result }: { result: RunResponse }) {
           </div>
         ))}
       </div>
+      {(result.conflicts?.length ?? 0) > 0 && (
+        <Panel title="Unresolved conflicts">
+          <ul className="space-y-2 text-sm">
+            {result.conflicts!.map((c, i) => (
+              <li key={i} className="text-[var(--fail)]">
+                <span className="mono text-xs">{String(c.requirement_id || "")}</span>{" "}
+                {String(c.summary || c.detail || "")}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+      {hasBuild && (
+        <div className="space-y-4">
+          <h3 className="text-xl font-semibold">Builder output</h3>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Metric
+              label="Tests passed"
+              value={String(result.tests_passed ?? 0)}
+              tone={(result.tests_failed ?? 0) === 0 && (result.tests_passed ?? 0) > 0 ? "pass" : "muted"}
+            />
+            <Metric
+              label="Tests failed"
+              value={String(result.tests_failed ?? 0)}
+              tone={(result.tests_failed ?? 0) > 0 ? "fail" : "muted"}
+            />
+            <Metric label="Build iters" value={String(result.build_iteration ?? "—")} />
+            <Metric label="Status" value={result.status || "—"} />
+          </div>
+          <Panel title="Diff">
+            <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5">
+              {result.diff || "(empty diff)"}
+            </pre>
+          </Panel>
+          {result.test_output && (
+            <Panel title="Test output">
+              <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-[var(--muted)]">
+                {result.test_output}
+              </pre>
+            </Panel>
+          )}
+        </div>
+      )}
       {result.explorer_findings && (
         <Panel title="Explorer open questions">
           <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--muted)]">
@@ -271,6 +343,7 @@ function SpecificationView({ result }: { result: RunResponse }) {
 function StatusBadge({ status }: { status: string }) {
   const normalized = (status || "proposed").toLowerCase();
   const map: Record<string, { label: string; cls: string }> = {
+    accepted: { label: "✓ accepted", cls: "border-[var(--pass)]/40 text-[var(--pass)]" },
     supported: { label: "✓ supported", cls: "border-[var(--pass)]/40 text-[var(--pass)]" },
     contradicted: { label: "✗ contradicted", cls: "border-[var(--fail)]/40 text-[var(--fail)]" },
     insufficient_evidence: {

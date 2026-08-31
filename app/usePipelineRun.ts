@@ -46,7 +46,19 @@ export function usePipelineRun() {
             const payload = JSON.parse(ev.data) as PipelineEvent;
             setEvents((prev) => [...prev, payload]);
             if (type === "agent_started") {
-              setActiveAgent(String(payload.data?.agent ?? ""));
+              const label = payload.data?.label;
+              const agent = String(payload.data?.agent ?? "");
+              const iteration = payload.data?.spec_iteration;
+              if (typeof label === "string" && label) {
+                setActiveAgent(label);
+              } else if (agent === "spec_detective" && iteration && Number(iteration) > 1) {
+                setActiveAgent(`↻ Spec Detective (iteration ${iteration})`);
+              } else {
+                setActiveAgent(agent);
+              }
+            }
+            if (type === "conflict_found" && payload.data?.action === "loop_back") {
+              setActiveAgent(String(payload.data?.label || "↻ Spec Detective (revision)"));
             }
             if (type === "run_completed") {
               es.close();
@@ -61,6 +73,7 @@ export function usePipelineRun() {
         es.addEventListener("tool_call", handle("tool_call"));
         es.addEventListener("tool_result", handle("tool_result"));
         es.addEventListener("spec_updated", handle("spec_updated"));
+        es.addEventListener("conflict_found", handle("conflict_found"));
         es.addEventListener("run_completed", handle("run_completed"));
         es.onerror = () => {
           es.close();
