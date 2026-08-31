@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0c0d10;
+  --bg-elevated: #14161c;
+  --bg-card: #181b22;
+  --line: #2a2e38;
+  --text: #e8e6df;
+  --muted: #9a9588;
+  --gold: #d4a853;
+  --gold-dim: #8a6b2e;
+  --pass: #6fbf73;
+  --fail: #e06c75;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100%;
+}
+
+body {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+}
+
+code,
+pre,
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--gold) 35%, transparent);
+}
